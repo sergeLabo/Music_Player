@@ -1,11 +1,10 @@
 # Music Player
 
-![Image](/images/example1.JPG)
-![Image](/images/example2.JPG)
+### Inspiration
 
-A simple program that can:
- - load, play and pause mp3 and FLAC tracks
- - display metadata information such as title, artist and album. 
- - a slider will show progression of the music, and can be used to change song position
+https://github.com/xyang-github/Music_Player
 
-Project was made using the Kivy framework.
+
+### Documentation
+
+https://ressources.labomedia.org/music_player_sur_raspberry_pi
