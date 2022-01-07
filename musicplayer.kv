@@ -135,10 +135,13 @@
         BoxLayout:  # cover
             size_hint_y: 0.55
             orientation: 'horizontal'
+
+            BoxLayout:
+                size_hint_x: 0.06
+
             BoxLayout:
                 orientation: 'vertical'
-                size_hint_x: 0.2
-                spacing: 20
+                size_hint_x: 0.1
                 BoxLayout:
                     size_hint_y: 0.3
                 Label:
@@ -156,24 +159,31 @@
 
             Image:  # cover
                 id: album_art
-                size_hint_x: 0.6
+                size_hint_x: 0.8
                 source: "covers/default_cover.png"
 
-            BoxLayout:  # play/pause
+            BoxLayout:  # previous_track, play/pause, next_track
                 orientation: 'vertical'
-                size_hint_x: 0.2
-                BoxLayout:
-                    size_hint_y: 0.2
-                Button:
-                    size_hint_y: 0.6
+                size_hint_x: 0.12
+                Button: # previous_track
+                    size_hint_y: 0.33
+                    background_normal: "images/left_normal.png"
+                    background_down: "images/left_down.png"
+                    on_press: root.previous()
+                Button:  # play/pause
+                    size_hint_y: 0.33
                     id: play_pause
-                    # # disabled: True
-                    background_disabled_normal: ''
                     background_normal: "images/Play-normal.png"
                     background_down: "images/Play-down.png"
                     on_press: root.play_pause()
-                BoxLayout:
-                    size_hint_y: 0.2
+                Button:  # next_track
+                    size_hint_y: 0.33
+                    background_normal: "images/right_normal.png"
+                    background_down: "images/right_down.png"
+                    on_press: root.next()
+
+            BoxLayout:
+                size_hint_x: 0.06
 
         ScrollView:  # title_scroll
             size_hint_y: 0.10

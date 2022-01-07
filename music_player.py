@@ -1,5 +1,5 @@
 
-from time import sleep
+from time import time, sleep
 import datetime
 import subprocess
 from threading import Thread
@@ -36,6 +36,13 @@ if 'arm'  in platform.machine():
     Window.fullscreen = True
 
 
+
+class MagFilterImage(Image):
+    def on_texture(self, _, tex):
+        tex.mag_filter = 'nearest'
+
+
+
 class LoadDialog(FloatLayout):
     """Shows the load dialog box, that contains file browser"""
 
@@ -61,7 +68,7 @@ class MainScreen(Screen):
         self.lib_infos = get_lib_infos(self.library, self.current_dir)
 
     def on_touch_move(self, touch):
-        if touch.dx < -10:
+        if touch.dx < -20:
             self.app.screen_manager.transition.direction = 'left'
             self.app.screen_manager.current = 'Albums'
 
@@ -118,10 +125,10 @@ class Albums(Screen):
         Clock.schedule_once(self.add_cover_buttons, 1)
 
     def on_touch_move(self, touch):
-        if touch.dx > 10:
+        if touch.dx > 20:
             self.app.screen_manager.transition.direction = 'right'
             self.app.screen_manager.current = 'Main'
-        if touch.dx < -10:
+        if touch.dx < -20:
             self.app.screen_manager.transition.direction = 'left'
             self.app.screen_manager.current = 'Player'
 
@@ -157,7 +164,13 @@ class Albums(Screen):
         # Lancement du player
         scr = self.app.screen_manager.get_screen('Player')
         scr.piste = 1
+        Clock.unschedule(scr.event_info)
+        scr.event_info = None
+        self.playback = None
+        scr.loop = 1
+        scr.block = 0
         scr.player_main()
+
         # Lancement des Tacks
         scr = self.app.screen_manager.get_screen('Tracks')
         scr.add_tracks()
@@ -167,20 +180,28 @@ class Albums(Screen):
 
 
 class Player(Screen):
+    """Playback est un thread qu'il est impossible de Killer.
+    Un nouveau est créer das une liste de Playback
+    """
+
     maxi = NumericProperty(100)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = App.get_running_app()
+
         self.playback = None
         self.piste = 1
         self.loop = 1
+        self.block = 0
+        self.event_info = None
+
 
     def on_touch_move(self, touch):
-        if touch.dx > 10:
+        if touch.dx > 20:
             self.app.screen_manager.transition.direction = 'right'
             self.app.screen_manager.current = 'Albums'
-        if touch.dx < -10:
+        if touch.dx < -20:
             self.app.screen_manager.transition.direction = 'left'
             self.app.screen_manager.current = 'Tracks'
 
@@ -196,6 +217,7 @@ class Player(Screen):
         (1, ('Bonheur', '/media/data/3D/music/flacs/Vieux_Farka_Touré_Samba/Vieux Farka Touré - Samba - 01 Bonheur.flac')),
         (2, ('Mariam (feat. Idan Raichel)', '/media/data/3D/music/flacs/Vieux_Farka_Touré_Samba/Vieux Farka Touré - Samba - 02 Mariam (feat. Idan Raichel).flac')), ...
         """
+
         scr = self.app.screen_manager.get_screen('Albums')
         self.lib_infos = scr.lib_infos
 
@@ -219,13 +241,15 @@ class Player(Screen):
         self.maxi = self.lib_infos[self.album]['titres'][self.piste][2]
         print(f"\nPlay de:\n    {self.piste}: {self.title}\n\n")
 
-        if self.playback:
-            self.playback.stop()
-        self.playback = Playback()
+        if not self.playback:
+            self.playback = Playback()
+
         self.playback.load_file(self.bibule)
         self.playback.play()
+        self.playback.seek(0)
+        print(f"Lancement d'un playback: position {self.playback.curr_pos}")
         self.loop = 1
-        self.thread_to_get_end()
+        self.thread_to_get_album_end()
 
         self.ids.track_number.text = str(self.piste)
         self.ids.play_pause.disabled = False
@@ -236,46 +260,79 @@ class Player(Screen):
         self.music_information()
         self.ids.play_pause.background_normal = "images/Pause-normal.png"
 
-    def thread_to_get_end(self):
-        Thread(target=self.get_end).start()
+    def thread_to_get_album_end(self):
+        Thread(target=self.get_album_end).start()
 
-    def get_end(self):
+    def get_album_end(self):
         while self.loop:
-            if not self.playback.active:
-                self.loop = 0
-                self.playback.stop()
-                if self.piste < len(self.keys):
-                    self.piste += 1
-                    self.play_track()
-                else:
-                    self.app.screen_manager.current = ("Albums")
-                    self.piste = 1
-                    Clock.unschedule(self.event_info)
-                    sleep(0.5)
-                    self.playback = None
-            sleep(1)
+            if self.playback:
+                if not self.playback.active:
+                    self.loop = 0
+                    self.playback.stop()
+                    if self.piste < len(self.keys):
+                        self.piste += 1
+                        self.play_track()
+                    else:
+                        print("Fin de l'album")
+                        self.app.screen_manager.current = ("Albums")
+                        self.piste = 1
+                        Clock.unschedule(self.event_info)
+                        self.event_info = None
+                        sleep(0.5)
+                        self.playback = None
+                sleep(1)
+
+    def thread_unblock(self):
+        Thread(target=self.unblock).start()
+
+    def unblock(self):
+        t = time()
+        while time() - t < 2.0:
+            sleep(0.1)
+        self.block = 0
 
     def new_track(self, track):
         """From sceen Tracks"""
         self.loop = 0
-        self.playback.stop()
         self.piste = track
         self.play_track()
 
+    def previous(self):
+        """Track previous"""
+
+        if not self.block:
+            self.piste -= 1
+            self.block = 1
+            self.thread_unblock()
+            if self.piste < 1:
+                self.piste = 1
+            self.play_track()
+
+    def next(self):
+        """Track next"""
+        if not self.block:
+            self.piste += 1
+            self.block = 1
+            self.thread_unblock()
+            if self.piste > len(self.keys):
+                self.piste = len(self.keys)
+            self.play_track()
+
     def play_pause(self):
         """Toggles between play/resume and pause functions"""
-        if self.ids.play_pause.background_normal == "images/Pause-normal.png":
+
+        if not self.playback.paused and self.block == 0:
+            self.block = 1
+            self.thread_unblock()
             self.playback.pause()
             self.ids.play_pause.background_normal = "images/Play-normal.png"
             self.ids.play_pause.background_down = "images/Play-down.png"
-            # Pour palier à la latence le la pi
-            sleep(0.1)
-        elif self.ids.play_pause.background_normal == "images/Play-normal.png":
+        elif self.playback.paused and self.block == 0:
             self.playback.resume()
+            self.block = 1
+            self.thread_unblock()
             self.ids.play_pause.background_normal = "images/Pause-normal.png"
             self.ids.play_pause.background_down = "images/Pause-down.png"
-            # Pour palier à la latence le la pi
-            sleep(0.1)
 
     def song_position(self, dt):
         """Displays duration of song in hh:mm:ss, and updates slider"""
@@ -283,6 +340,7 @@ class Player(Screen):
             # current song position
             current_pos = datetime.timedelta(seconds=self.playback.curr_pos)
             current_pos = str(current_pos)[:7]
+            print(current_pos, "block", self.block)
 
             # total duration of song
             track_length = datetime.timedelta(seconds=self.playback.duration)
@@ -296,24 +354,28 @@ class Player(Screen):
     def change_position(self, value):
         """Syncs position of song with slider position"""
         try:
-            self.playback.seek(int(value))
+            if not self.block:
+                self.playback.seek(int(value))
+                self.block = 1
+                self.thread_unblock()
         except:
             pass
 
     def music_information(self):
         """Displays song duration, title, album and artist"""
 
-        unknown = ["Unknown Title", "Unknown Album", "Unknown Artist"]
-
         # Calls on clock module to repeatedly update audio slider
-        if self.playback.active:
-            self.ids.song_slider.max = int(self.playback.duration)
-            self.event_info = Clock.schedule_interval(self.song_position, 1)
+        if self.playback:
+            if self.playback.active:
+                self.ids.song_slider.max = int(self.playback.duration)
+                if not self.event_info:
+                    print("Lancement de la Maj de song position")
+                    self.event_info = Clock.schedule_interval(self.song_position, 1)
 
-            self.ids.title.text = self.title
-            self.ids.album.text = self.album_name
-            self.ids.artist.text = self.artist
-            self.ids.album_art.source = self.cover
+                self.ids.title.text = self.title
+                self.ids.album.text = self.album_name
+                self.ids.artist.text = self.artist
+                self.ids.album_art.source = self.cover
 
         # Create an animated title that scrolls horizontally
         scrolling_effect = Animation(x=0, duration=1)  # opacity=0,
@@ -332,7 +394,7 @@ class Tracks(Screen):
         self.layout = None
 
     def on_touch_move(self, touch):
-        if touch.dx > 10:
+        if touch.dx > 20:
             self.app.screen_manager.transition.direction = 'right'
             self.app.screen_manager.current = 'Player'
 
